@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  spark-benchmark:
+    build: .
+    container_name: spark-benchmark
+    volumes:
+      - ./reports:/app/reports
+      - ./:/app:ro
+    environment:
+      - SPARK_LOCAL_IP=127.0.0.1
+      - SPARK_DRIVER_HOST=127.0.0.1
+    command: python main.py small
+    mem_limit: 4g
+    cpus: 2
+    
+  # Service for medium dataset
+  spark-benchmark-medium:
+    build: .
+    container_name: spark-benchmark-medium
+    volumes:
+      - ./reports:/app/reports
+      - ./:/app:ro
+    environment:
+      - SPARK_LOCAL_IP=127.0.0.1
+      - SPARK_DRIVER_HOST=127.0.0.1
+    command: python main.py medium
+    mem_limit: 4g
+    cpus: 2
+    profiles:
+      - medium
+    
+  # Service for large dataset
+  spark-benchmark-large:
+    build: .
+    container_name: spark-benchmark-large
+    volumes:
+      - ./reports:/app/reports
+      - ./:/app:ro
+    environment:
+      - SPARK_LOCAL_IP=127.0.0.1
+      - SPARK_DRIVER_HOST=127.0.0.1
+    command: python main.py large
+    mem_limit: 8g
+    cpus: 4
+    profiles:
+      - large
