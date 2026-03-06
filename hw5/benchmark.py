@@ -139,8 +139,8 @@ class SparkBenchmarks:
             # For average, need sum and count
             sum_count = rdd.aggregateByKey(
                 (0.0, 0),
-                lambda acc, v: (acc[0] + v, acc[1] + 1),
-                lambda acc1, acc2: (acc1[0] + acc2[0], acc1[1] + acc2[1])
+                lambda acc, v: (acc[0] + v, acc[1] + 1),  # type: ignore
+                lambda acc1, acc2: (acc1[0] + acc2[0], acc1[1] + acc2[1])  # type: ignore
             )
             average = sum_count.mapValues(lambda x: x[0] / x[1] if x[1] > 0 else 0).collect()
             
@@ -251,7 +251,7 @@ class SparkBenchmarks:
             
             # Count by key
             result = exploded.map(lambda x: (x, 1)) \
-                            .reduceByKey(lambda a, b: a + b)
+                            .reduceByKey(lambda a, b: a + b)  # type: ignore
             result.collect()
         
         df_time = time_execution(dataframe_approach)
@@ -320,7 +320,7 @@ class SparkBenchmarks:
             
             # Union and aggregate
             result = premium.union(standard).union(basic).union(economy) \
-                           .reduceByKey(lambda a, b: a + b)
+                           .reduceByKey(lambda a, b: a + b)  # type: ignore
             result.collect()
         
         df_time = time_execution(dataframe_approach)

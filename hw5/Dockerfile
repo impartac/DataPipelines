@@ -1,4 +1,5 @@
 # Dockerfile for Spark performance benchmarks
+# hadolint ignore=DL3006
 FROM python:3.11-slim
 
 # Install Java (required for Spark)
