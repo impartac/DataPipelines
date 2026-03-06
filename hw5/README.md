@@ -64,13 +64,58 @@ hw5/
 - Apache Spark 3.4+
 - Java 8 или 11
 
+**ИЛИ**
+
+- Docker и Docker Compose (рекомендуется)
+
 ### Установка зависимостей
+
+#### Вариант 1: Docker (рекомендуется)
+
+Docker автоматически настроит все зависимости:
+
+```bash
+# Сборка образа
+docker-compose build
+
+# Запуск быстрого теста
+docker-compose up spark-benchmark
+
+# Или используйте PowerShell скрипт (Windows)
+.\run_docker.ps1 small
+
+# Или Bash скрипт (Linux/MacOS)
+./run_docker.sh small
+```
+
+Результаты будут сохранены в папку `./reports/`
+
+#### Вариант 2: Локальная установка
 
 ```bash
 pip install -r requirements.txt
 ```
 
 ### Запуск бенчмарков
+
+#### С Docker
+
+```bash
+# Быстрый тест (10,000 строк)
+docker-compose up spark-benchmark
+
+# Средний тест (100,000 строк)
+docker-compose --profile medium up spark-benchmark-medium
+
+# Большой тест (1,000,000 строк)
+docker-compose --profile large up spark-benchmark-large
+
+# Или используйте скрипты:
+.\run_docker.ps1 small   # Windows
+./run_docker.sh medium   # Linux/MacOS
+```
+
+#### Локально
 
 ```bash
 # Запуск с размером датасета по умолчанию (medium = 100,000 строк)
@@ -90,11 +135,13 @@ python main.py large
 
 ### Результаты
 
-После выполнения бенчмарков будет создан файл `performance_report_<размер>.md` с:
+После выполнения бенчмарков будет создан файл `reports/performance_report_<размер>.md` с:
 - Таблицами производительности
 - Подробным описанием каждого кейса
 - Анализом оптимизаций Catalyst/Tungsten
 - Выводами и рекомендациями
+
+Папка `reports/` монтируется как volume в Docker, поэтому результаты доступны на хост-машине.
 
 ## Ключевые оптимизации
 

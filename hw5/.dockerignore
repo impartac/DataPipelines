@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation (copied separately if needed)
+*.md
+!README.md
+
+# Reports (will be mounted as volume)
+reports/
+performance_report_*.md
+*.csv
+
+# Test data
+test_data/
+data/
+
+# Spark
+metastore_db/
+derby.log
+spark-warehouse/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

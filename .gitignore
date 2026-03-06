@@ -29,6 +29,8 @@ spark-warehouse/
 # Performance reports and results
 performance_report_*.md
 performance_results.csv
+reports/*.md
+!reports/.gitkeep
 *.parquet
 *.avro
 

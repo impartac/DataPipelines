@@ -2,6 +2,30 @@
 
 ## Установка
 
+### Вариант 1: Docker (рекомендуется - работает везде!)
+
+1. Убедитесь, что установлен Docker:
+```bash
+docker --version
+docker-compose --version
+```
+
+2. Запустите бенчмарк:
+```bash
+# Windows PowerShell
+.\run_docker.ps1 small
+
+# Linux/MacOS/WSL
+./run_docker.sh small
+
+# Или напрямую через docker-compose
+docker-compose up spark-benchmark
+```
+
+**Готово!** Результаты появятся в папке `reports/`
+
+### Вариант 2: Локальная установка
+
 1. Установите зависимости:
 ```bash
 cd hw5
@@ -14,6 +38,36 @@ java -version
 ```
 
 ## Запуск
+
+### С Docker (работает на Windows/Linux/MacOS)
+
+```bash
+# Быстрый тест (10,000 строк, ~2-3 минуты)
+docker-compose up spark-benchmark
+
+# Средний тест (100,000 строк, ~5-10 минут)
+docker-compose --profile medium up spark-benchmark-medium
+
+# Большой тест (1,000,000 строк, ~15-30 минут)
+docker-compose --profile large up spark-benchmark-large
+```
+
+**Удобные скрипты:**
+```powershell
+# Windows PowerShell
+.\run_docker.ps1 small
+.\run_docker.ps1 medium
+.\run_docker.ps1 large
+```
+
+```bash
+# Linux/MacOS/WSL
+./run_docker.sh small
+./run_docker.sh medium
+./run_docker.sh large
+```
+
+### Локально
 
 ### Быстрый тест (малый датасет)
 ```bash
@@ -39,7 +93,7 @@ python main.py large
 
 ## Результаты
 
-После выполнения появится файл `performance_report_<размер>.md` с:
+После выполнения появится файл `reports/performance_report_<размер>.md` с:
 - ✅ Таблицами производительности
 - ✅ Кодом всех тест-кейсов
 - ✅ Объяснением оптимизаций Catalyst/Tungsten

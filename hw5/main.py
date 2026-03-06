@@ -39,6 +39,9 @@ def main():
     
     print(f"\nDataset size: {dataset_size:,} rows")
     
+    # Create reports directory if it doesn't exist
+    os.makedirs("reports", exist_ok=True)
+    
     # Create Spark session
     print("\nInitializing Spark session...")
     spark = create_spark_session()
@@ -52,7 +55,7 @@ def main():
         results = benchmarks.run_all(dataset_size)
         
         # Generate report
-        output_file = f"performance_report_{dataset_size}.md"
+        output_file = f"reports/performance_report_{dataset_size}.md"
         generate_markdown_report(results, dataset_size, output_file)
         
         print("\n" + "="*80)
