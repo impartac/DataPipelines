@@ -29,8 +29,9 @@ spark-warehouse/
 # Performance reports and results
 performance_report_*.md
 performance_results.csv
-reports/*.md
-!reports/.gitkeep
+# Allow reports in hw5/reports directory
+!hw5/reports/*.md
+!hw5/reports/.gitkeep
 *.parquet
 *.avro
 

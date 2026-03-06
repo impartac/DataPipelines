@@ -40,11 +40,11 @@ def test_basic_spark():
         print("\nAggregation result:")
         result.show()
         
-        print("\n✅ Basic Spark test passed!")
+        print("\n[ ] Basic Spark test passed!")
         return True
         
     except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        print(f"\n[X] Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False

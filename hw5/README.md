@@ -12,13 +12,13 @@
 
 ```
 hw5/
-├── main.py                  # Главный скрипт запуска
-├── config.py               # Конфигурация Spark и параметров
-├── benchmark.py            # Бенчмарки и тест-кейсы
-├── data_generator.py       # Генераторы тестовых данных
-├── report_generator.py     # Генератор отчетов
-├── requirements.txt        # Зависимости Python
-└── README.md              # Этот файл
+ main.py                  # Главный скрипт запуска
+ config.py               # Конфигурация Spark и параметров
+ benchmark.py            # Бенчмарки и тест-кейсы
+ data_generator.py       # Генераторы тестовых данных
+ report_generator.py     # Генератор отчетов
+ requirements.txt        # Зависимости Python
+ README.md              # Этот файл
 ```
 
 ## Реализованные кейсы
