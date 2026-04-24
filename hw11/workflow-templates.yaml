@@ -1,0 +1,763 @@
+# ==============================================================================
+# УНИВЕРСАЛЬНЫЕ WORKFLOW TEMPLATES ДЛЯ ARGO WORKFLOWS
+# ==============================================================================
+# Эти шаблоны решают частые задачи оркестрации:
+# 1. Валидация данных
+# 2. ETL-обработка
+# 3. Уведомления
+# 4. Условное выполнение
+# 5. Пакетная обработка файлов
+# ==============================================================================
+
+---
+# ==============================================================================
+# TEMPLATE 1: DATA VALIDATION
+# ==============================================================================
+# Назначение: Проверка корректности данных перед обработкой
+# Входные параметры:
+#   - data-path: путь к файлу данных
+#   - validation-rules: JSON с правилами валидации
+#   - fail-on-error: завершать ли workflow при ошибке
+# Выходные параметры:
+#   - validation-status: success/failed
+#   - error-count: количество ошибок
+#   - validation-report: подробный отчет
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: data-validation-template
+  namespace: argo
+spec:
+  templates:
+  - name: validate
+    inputs:
+      parameters:
+      - name: data-path
+        description: "Path to the data file (S3, local, or URL)"
+      - name: validation-rules
+        description: "JSON string with validation rules"
+        default: '{"check_schema": true, "check_nulls": true, "check_duplicates": true}'
+      - name: fail-on-error
+        description: "Whether to fail workflow on validation errors"
+        default: "false"
+      - name: data-format
+        description: "Data format: csv, json, parquet, avro"
+        default: "csv"
+    outputs:
+      parameters:
+      - name: validation-status
+        valueFrom:
+          path: /tmp/validation-status.txt
+      - name: error-count
+        valueFrom:
+          path: /tmp/error-count.txt
+      - name: validation-report
+        valueFrom:
+          path: /tmp/validation-report.json
+    container:
+      image: python:3.10-slim
+      command: [python]
+      args:
+      - -c
+      - |
+        import json
+        import sys
+        from datetime import datetime
+        
+        # Входные параметры
+        data_path = "{{inputs.parameters.data-path}}"
+        validation_rules = json.loads('''{{inputs.parameters.validation-rules}}''')
+        fail_on_error = "{{inputs.parameters.fail-on-error}}" == "true"
+        data_format = "{{inputs.parameters.data-format}}"
+        
+        print(f"Starting validation for: {data_path}")
+        print(f"Format: {data_format}")
+        print(f"Rules: {validation_rules}")
+        
+        # Симуляция валидации
+        errors = []
+        warnings = []
+        
+        # Проверка схемы
+        if validation_rules.get("check_schema"):
+            print("Checking schema...")
+            # В реальности здесь будет проверка схемы
+            
+        # Проверка NULL значений
+        if validation_rules.get("check_nulls"):
+            print("Checking for NULL values...")
+            # Пример: обнаружено 5 NULL значений
+            warnings.append("Found 5 NULL values in column 'email'")
+            
+        # Проверка дубликатов
+        if validation_rules.get("check_duplicates"):
+            print("Checking for duplicates...")
+            # Пример: обнаружено 3 дубликата
+            warnings.append("Found 3 duplicate records")
+        
+        # Формирование результата
+        status = "failed" if errors else "success"
+        error_count = len(errors)
+        
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "data_path": data_path,
+            "data_format": data_format,
+            "status": status,
+            "error_count": error_count,
+            "warning_count": len(warnings),
+            "errors": errors,
+            "warnings": warnings,
+            "rules_applied": validation_rules
+        }
+        
+        # Сохранение выходных данных
+        with open("/tmp/validation-status.txt", "w") as f:
+            f.write(status)
+            
+        with open("/tmp/error-count.txt", "w") as f:
+            f.write(str(error_count))
+            
+        with open("/tmp/validation-report.json", "w") as f:
+            json.dump(report, f, indent=2)
+        
+        print(f"\nValidation completed: {status}")
+        print(f"Errors: {error_count}, Warnings: {len(warnings)}")
+        
+        # Завершение с ошибкой если требуется
+        if fail_on_error and errors:
+            sys.exit(1)
+
+---
+# ==============================================================================
+# TEMPLATE 2: ETL PROCESSING
+# ==============================================================================
+# Назначение: Extract-Transform-Load обработка данных
+# Входные параметры:
+#   - source-path: путь к исходным данным
+#   - target-path: путь для сохранения результата
+#   - transformation-type: тип трансформации
+#   - chunk-size: размер чанка для обработки
+# Выходные параметры:
+#   - records-processed: количество обработанных записей
+#   - processing-time: время обработки в секундах
+#   - output-size: размер выходного файла
+# Артефакты:
+#   - processed-data: обработанные данные
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: etl-processing-template
+  namespace: argo
+spec:
+  templates:
+  - name: process
+    inputs:
+      parameters:
+      - name: source-path
+        description: "Source data path"
+      - name: target-path
+        description: "Target output path"
+      - name: transformation-type
+        description: "Type of transformation: filter, aggregate, join, enrich"
+        default: "filter"
+      - name: transformation-config
+        description: "JSON configuration for transformation"
+        default: '{}'
+      - name: chunk-size
+        description: "Number of records to process in one batch"
+        default: "1000"
+      - name: source-format
+        description: "Source data format"
+        default: "csv"
+      - name: target-format
+        description: "Target data format"
+        default: "parquet"
+    outputs:
+      parameters:
+      - name: records-processed
+        valueFrom:
+          path: /tmp/records-processed.txt
+      - name: processing-time
+        valueFrom:
+          path: /tmp/processing-time.txt
+      - name: output-size
+        valueFrom:
+          path: /tmp/output-size.txt
+    container:
+      image: python:3.10-slim
+      command: [python]
+      args:
+      - -c
+      - |
+        import json
+        import time
+        import os
+        from datetime import datetime
+        
+        start_time = time.time()
+        
+        # Входные параметры
+        source_path = "{{inputs.parameters.source-path}}"
+        target_path = "{{inputs.parameters.target-path}}"
+        transformation_type = "{{inputs.parameters.transformation-type}}"
+        transformation_config = json.loads('''{{inputs.parameters.transformation-config}}''')
+        chunk_size = int("{{inputs.parameters.chunk-size}}")
+        source_format = "{{inputs.parameters.source-format}}"
+        target_format = "{{inputs.parameters.target-format}}"
+        
+        print(f"ETL Processing Started")
+        print(f"Source: {source_path} ({source_format})")
+        print(f"Target: {target_path} ({target_format})")
+        print(f"Transformation: {transformation_type}")
+        print(f"Chunk size: {chunk_size}")
+        
+        # EXTRACT
+        print("\n[1/3] EXTRACT: Reading source data...")
+        # В реальности здесь будет чтение из S3, HDFS и т.д.
+        records_read = 10000  # Симуляция
+        print(f"Extracted {records_read} records")
+        
+        # TRANSFORM
+        print(f"\n[2/3] TRANSFORM: Applying {transformation_type}...")
+        records_processed = 0
+        
+        if transformation_type == "filter":
+            # Фильтрация данных
+            print("Applying filters...")
+            records_processed = int(records_read * 0.8)  # 80% прошли фильтр
+            
+        elif transformation_type == "aggregate":
+            # Агрегация данных
+            print("Aggregating data...")
+            records_processed = int(records_read * 0.1)  # Агрегация уменьшает данные
+            
+        elif transformation_type == "join":
+            # Соединение данных
+            print("Joining with additional data...")
+            records_processed = int(records_read * 1.2)  # Join увеличивает данные
+            
+        elif transformation_type == "enrich":
+            # Обогащение данных
+            print("Enriching records...")
+            records_processed = records_read
+            
+        print(f"Transformed {records_processed} records")
+        
+        # LOAD
+        print(f"\n[3/3] LOAD: Writing to {target_format}...")
+        os.makedirs("/tmp/output", exist_ok=True)
+        
+        # Создание выходного файла
+        output_file = f"/tmp/output/data.{target_format}"
+        with open(output_file, "w") as f:
+            f.write(f"Processed data: {records_processed} records\n")
+            f.write(f"Transformation: {transformation_type}\n")
+            f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+        
+        output_size = os.path.getsize(output_file)
+        processing_time = time.time() - start_time
+        
+        # Сохранение метрик
+        with open("/tmp/records-processed.txt", "w") as f:
+            f.write(str(records_processed))
+            
+        with open("/tmp/processing-time.txt", "w") as f:
+            f.write(f"{processing_time:.2f}")
+            
+        with open("/tmp/output-size.txt", "w") as f:
+            f.write(str(output_size))
+        
+        print(f"\nETL Processing Completed")
+        print(f"Records processed: {records_processed}")
+        print(f"Processing time: {processing_time:.2f}s")
+        print(f"Output size: {output_size} bytes")
+
+---
+# ==============================================================================
+# TEMPLATE 3: NOTIFICATION SENDER
+# ==============================================================================
+# Назначение: Отправка уведомлений о статусе выполнения workflow
+# Входные параметры:
+#   - notification-type: тип уведомления (email, slack, webhook)
+#   - recipients: получатели уведомления
+#   - subject: тема сообщения
+#   - message: текст сообщения
+#   - status: статус для уведомления (success, warning, error)
+# Выходные параметры:
+#   - notification-sent: успешность отправки
+#   - send-timestamp: время отправки
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: notification-template
+  namespace: argo
+spec:
+  templates:
+  - name: send
+    inputs:
+      parameters:
+      - name: notification-type
+        description: "Type: email, slack, webhook, teams"
+        default: "slack"
+      - name: recipients
+        description: "Comma-separated list of recipients"
+      - name: subject
+        description: "Notification subject/title"
+      - name: message
+        description: "Notification message body"
+      - name: status
+        description: "Status: success, warning, error, info"
+        default: "info"
+      - name: webhook-url
+        description: "Webhook URL (for slack/teams/webhook types)"
+        default: ""
+      - name: include-metadata
+        description: "Include workflow metadata in notification"
+        default: "true"
+    outputs:
+      parameters:
+      - name: notification-sent
+        valueFrom:
+          path: /tmp/notification-sent.txt
+      - name: send-timestamp
+        valueFrom:
+          path: /tmp/send-timestamp.txt
+    container:
+      image: python:3.10-slim
+      command: [python]
+      args:
+      - -c
+      - |
+        import json
+        from datetime import datetime
+        
+        # Входные параметры
+        notification_type = "{{inputs.parameters.notification-type}}"
+        recipients = "{{inputs.parameters.recipients}}"
+        subject = "{{inputs.parameters.subject}}"
+        message = """{{inputs.parameters.message}}"""
+        status = "{{inputs.parameters.status}}"
+        webhook_url = "{{inputs.parameters.webhook-url}}"
+        include_metadata = "{{inputs.parameters.include-metadata}}" == "true"
+        
+        # Эмодзи для статусов
+        status_emoji = {
+            "success": "✅",
+            "warning": "⚠️",
+            "error": "❌",
+            "info": "ℹ️"
+        }
+        
+        emoji = status_emoji.get(status, "📌")
+        
+        print(f"Sending {notification_type} notification")
+        print(f"Recipients: {recipients}")
+        print(f"Status: {status} {emoji}")
+        print(f"Subject: {subject}")
+        
+        # Формирование сообщения
+        full_message = f"{emoji} {subject}\n\n{message}"
+        
+        if include_metadata:
+            full_message += f"\n\nTimestamp: {datetime.now().isoformat()}"
+            full_message += f"\nStatus: {status}"
+        
+        # Отправка уведомления
+        notification_sent = "true"
+        
+        if notification_type == "slack":
+            print(f"\nSending to Slack...")
+            # В реальности: requests.post(webhook_url, json=payload)
+            slack_payload = {
+                "text": full_message,
+                "username": "Argo Workflows",
+                "icon_emoji": emoji
+            }
+            print(f"Slack payload: {json.dumps(slack_payload, indent=2)}")
+            
+        elif notification_type == "email":
+            print(f"\nSending email to: {recipients}")
+            # В реальности: SMTP отправка
+            print(f"Subject: {subject}")
+            print(f"Body:\n{full_message}")
+            
+        elif notification_type == "teams":
+            print(f"\nSending to Microsoft Teams...")
+            # В реальности: POST к Teams webhook
+            teams_payload = {
+                "@type": "MessageCard",
+                "title": subject,
+                "text": message,
+                "themeColor": "0076D7" if status == "success" else "FF0000"
+            }
+            print(f"Teams payload: {json.dumps(teams_payload, indent=2)}")
+            
+        elif notification_type == "webhook":
+            print(f"\nSending to webhook: {webhook_url}")
+            # В реальности: POST к произвольному webhook
+            webhook_payload = {
+                "subject": subject,
+                "message": message,
+                "status": status,
+                "timestamp": datetime.now().isoformat()
+            }
+            print(f"Webhook payload: {json.dumps(webhook_payload, indent=2)}")
+        
+        # Сохранение результата
+        send_timestamp = datetime.now().isoformat()
+        
+        with open("/tmp/notification-sent.txt", "w") as f:
+            f.write(notification_sent)
+            
+        with open("/tmp/send-timestamp.txt", "w") as f:
+            f.write(send_timestamp)
+        
+        print(f"\n{emoji} Notification sent successfully at {send_timestamp}")
+
+---
+# ==============================================================================
+# TEMPLATE 4: CONDITIONAL EXECUTION
+# ==============================================================================
+# Назначение: Условное выполнение действий на основе критериев
+# Входные параметры:
+#   - condition-type: тип условия (threshold, status, regex)
+#   - condition-value: значение для проверки
+#   - condition-operator: оператор сравнения
+#   - threshold: пороговое значение
+# Выходные параметры:
+#   - condition-result: результат проверки условия (true/false)
+#   - execution-decision: решение о выполнении (execute/skip)
+#   - decision-reason: причина решения
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: conditional-execution-template
+  namespace: argo
+spec:
+  templates:
+  - name: evaluate
+    inputs:
+      parameters:
+      - name: condition-type
+        description: "Type: threshold, status, regex, range"
+        default: "threshold"
+      - name: condition-value
+        description: "Value to evaluate"
+      - name: condition-operator
+        description: "Operator: gt, lt, eq, ne, gte, lte, contains, matches"
+        default: "gt"
+      - name: threshold
+        description: "Threshold value for comparison"
+        default: "0"
+      - name: default-decision
+        description: "Default decision if evaluation is inconclusive"
+        default: "skip"
+    outputs:
+      parameters:
+      - name: condition-result
+        valueFrom:
+          path: /tmp/condition-result.txt
+      - name: execution-decision
+        valueFrom:
+          path: /tmp/execution-decision.txt
+      - name: decision-reason
+        valueFrom:
+          path: /tmp/decision-reason.txt
+    container:
+      image: python:3.10-slim
+      command: [python]
+      args:
+      - -c
+      - |
+        import re
+        import json
+        
+        # Входные параметры
+        condition_type = "{{inputs.parameters.condition-type}}"
+        condition_value = "{{inputs.parameters.condition-value}}"
+        condition_operator = "{{inputs.parameters.condition-operator}}"
+        threshold = "{{inputs.parameters.threshold}}"
+        default_decision = "{{inputs.parameters.default-decision}}"
+        
+        print(f"Evaluating condition:")
+        print(f"Type: {condition_type}")
+        print(f"Value: {condition_value}")
+        print(f"Operator: {condition_operator}")
+        print(f"Threshold: {threshold}")
+        
+        condition_result = False
+        decision_reason = ""
+        
+        # Оценка условия
+        if condition_type == "threshold":
+            try:
+                value_num = float(condition_value)
+                threshold_num = float(threshold)
+                
+                if condition_operator == "gt":
+                    condition_result = value_num > threshold_num
+                    decision_reason = f"{value_num} > {threshold_num}"
+                elif condition_operator == "lt":
+                    condition_result = value_num < threshold_num
+                    decision_reason = f"{value_num} < {threshold_num}"
+                elif condition_operator == "gte":
+                    condition_result = value_num >= threshold_num
+                    decision_reason = f"{value_num} >= {threshold_num}"
+                elif condition_operator == "lte":
+                    condition_result = value_num <= threshold_num
+                    decision_reason = f"{value_num} <= {threshold_num}"
+                elif condition_operator == "eq":
+                    condition_result = value_num == threshold_num
+                    decision_reason = f"{value_num} == {threshold_num}"
+                elif condition_operator == "ne":
+                    condition_result = value_num != threshold_num
+                    decision_reason = f"{value_num} != {threshold_num}"
+                    
+            except ValueError:
+                print(f"Warning: Cannot convert to number for threshold comparison")
+                decision_reason = "Invalid numeric values"
+                
+        elif condition_type == "status":
+            if condition_operator == "eq":
+                condition_result = condition_value == threshold
+                decision_reason = f"'{condition_value}' == '{threshold}'"
+            elif condition_operator == "ne":
+                condition_result = condition_value != threshold
+                decision_reason = f"'{condition_value}' != '{threshold}'"
+            elif condition_operator == "contains":
+                condition_result = threshold in condition_value
+                decision_reason = f"'{threshold}' in '{condition_value}'"
+                
+        elif condition_type == "regex":
+            pattern = threshold
+            condition_result = bool(re.search(pattern, condition_value))
+            decision_reason = f"'{condition_value}' matches /{pattern}/"
+            
+        elif condition_type == "range":
+            # Threshold должен быть в формате "min,max"
+            try:
+                min_val, max_val = map(float, threshold.split(","))
+                value_num = float(condition_value)
+                condition_result = min_val <= value_num <= max_val
+                decision_reason = f"{min_val} <= {value_num} <= {max_val}"
+            except:
+                decision_reason = "Invalid range format"
+        
+        # Принятие решения
+        execution_decision = "execute" if condition_result else "skip"
+        
+        print(f"\nCondition Result: {condition_result}")
+        print(f"Execution Decision: {execution_decision}")
+        print(f"Reason: {decision_reason}")
+        
+        # Сохранение результатов
+        with open("/tmp/condition-result.txt", "w") as f:
+            f.write(str(condition_result).lower())
+            
+        with open("/tmp/execution-decision.txt", "w") as f:
+            f.write(execution_decision)
+            
+        with open("/tmp/decision-reason.txt", "w") as f:
+            f.write(decision_reason)
+
+---
+# ==============================================================================
+# TEMPLATE 5: BATCH FILE PROCESSOR
+# ==============================================================================
+# Назначение: Пакетная обработка множества файлов
+# Входные параметры:
+#   - source-directory: директория с файлами
+#   - file-pattern: паттерн для фильтрации файлов
+#   - operation: операция (copy, move, transform, analyze)
+#   - parallel-workers: количество параллельных воркеров
+# Выходные параметры:
+#   - files-processed: количество обработанных файлов
+#   - files-failed: количество файлов с ошибками
+#   - total-size: общий размер обработанных файлов
+#   - file-list: список обработанных файлов (JSON)
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: batch-file-processor-template
+  namespace: argo
+spec:
+  templates:
+  - name: process-batch
+    inputs:
+      parameters:
+      - name: source-directory
+        description: "Source directory path"
+      - name: file-pattern
+        description: "File pattern to match (e.g., *.csv, *.json)"
+        default: "*.*"
+      - name: operation
+        description: "Operation: copy, move, transform, analyze, compress"
+        default: "analyze"
+      - name: target-directory
+        description: "Target directory for copy/move operations"
+        default: "/tmp/target"
+      - name: parallel-workers
+        description: "Number of parallel workers"
+        default: "4"
+      - name: fail-fast
+        description: "Stop on first error"
+        default: "false"
+    outputs:
+      parameters:
+      - name: files-processed
+        valueFrom:
+          path: /tmp/files-processed.txt
+      - name: files-failed
+        valueFrom:
+          path: /tmp/files-failed.txt
+      - name: total-size
+        valueFrom:
+          path: /tmp/total-size.txt
+      - name: file-list
+        valueFrom:
+          path: /tmp/file-list.json
+    container:
+      image: python:3.10-slim
+      command: [python]
+      args:
+      - -c
+      - |
+        import json
+        import os
+        import re
+        from datetime import datetime
+        
+        # Входные параметры
+        source_directory = "{{inputs.parameters.source-directory}}"
+        file_pattern = "{{inputs.parameters.file-pattern}}"
+        operation = "{{inputs.parameters.operation}}"
+        target_directory = "{{inputs.parameters.target-directory}}"
+        parallel_workers = int("{{inputs.parameters.parallel-workers}}")
+        fail_fast = "{{inputs.parameters.fail-fast}}" == "true"
+        
+        print(f"Batch File Processing Started")
+        print(f"Source: {source_directory}")
+        print(f"Pattern: {file_pattern}")
+        print(f"Operation: {operation}")
+        print(f"Workers: {parallel_workers}")
+        
+        # Симуляция обнаружения файлов
+        # В реальности: glob.glob() или os.walk()
+        simulated_files = [
+            {"name": "data1.csv", "size": 1024000, "path": f"{source_directory}/data1.csv"},
+            {"name": "data2.csv", "size": 2048000, "path": f"{source_directory}/data2.csv"},
+            {"name": "data3.csv", "size": 512000, "path": f"{source_directory}/data3.csv"},
+            {"name": "config.json", "size": 1024, "path": f"{source_directory}/config.json"},
+            {"name": "results.parquet", "size": 4096000, "path": f"{source_directory}/results.parquet"},
+        ]
+        
+        # Фильтрация по паттерну
+        pattern_regex = file_pattern.replace("*", ".*").replace("?", ".")
+        filtered_files = [
+            f for f in simulated_files 
+            if re.match(pattern_regex, f["name"])
+        ]
+        
+        print(f"\nFound {len(filtered_files)} files matching pattern")
+        
+        # Обработка файлов
+        files_processed = 0
+        files_failed = 0
+        total_size = 0
+        processed_file_list = []
+        
+        for file_info in filtered_files:
+            file_path = file_info["path"]
+            file_name = file_info["name"]
+            file_size = file_info["size"]
+            
+            print(f"\nProcessing [{files_processed + 1}/{len(filtered_files)}]: {file_name}")
+            
+            try:
+                if operation == "analyze":
+                    # Анализ файла
+                    print(f"  Analyzing... Size: {file_size} bytes")
+                    result = {
+                        "file": file_name,
+                        "size": file_size,
+                        "status": "analyzed",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                elif operation == "copy":
+                    # Копирование файла
+                    print(f"  Copying to {target_directory}...")
+                    result = {
+                        "file": file_name,
+                        "source": file_path,
+                        "target": f"{target_directory}/{file_name}",
+                        "status": "copied"
+                    }
+                    
+                elif operation == "move":
+                    # Перемещение файла
+                    print(f"  Moving to {target_directory}...")
+                    result = {
+                        "file": file_name,
+                        "source": file_path,
+                        "target": f"{target_directory}/{file_name}",
+                        "status": "moved"
+                    }
+                    
+                elif operation == "transform":
+                    # Трансформация файла
+                    print(f"  Transforming...")
+                    result = {
+                        "file": file_name,
+                        "transformation": "applied",
+                        "status": "transformed"
+                    }
+                    
+                elif operation == "compress":
+                    # Сжатие файла
+                    print(f"  Compressing...")
+                    compressed_size = int(file_size * 0.3)  # 70% сжатие
+                    result = {
+                        "file": file_name,
+                        "original_size": file_size,
+                        "compressed_size": compressed_size,
+                        "compression_ratio": f"{((file_size - compressed_size) / file_size * 100):.1f}%",
+                        "status": "compressed"
+                    }
+                
+                processed_file_list.append(result)
+                files_processed += 1
+                total_size += file_size
+                print(f"  ✓ Success")
+                
+            except Exception as e:
+                print(f"  ✗ Failed: {str(e)}")
+                files_failed += 1
+                if fail_fast:
+                    print("Fail-fast enabled, stopping...")
+                    break
+        
+        # Сохранение результатов
+        print(f"\n{'='*50}")
+        print(f"Batch Processing Completed")
+        print(f"Files processed: {files_processed}")
+        print(f"Files failed: {files_failed}")
+        print(f"Total size: {total_size} bytes ({total_size / 1024 / 1024:.2f} MB)")
+        
+        with open("/tmp/files-processed.txt", "w") as f:
+            f.write(str(files_processed))
+            
+        with open("/tmp/files-failed.txt", "w") as f:
+            f.write(str(files_failed))
+            
+        with open("/tmp/total-size.txt", "w") as f:
+            f.write(str(total_size))
+            
+        with open("/tmp/file-list.json", "w") as f:
+            json.dump(processed_file_list, f, indent=2)

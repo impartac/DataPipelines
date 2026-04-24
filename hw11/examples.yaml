@@ -1,0 +1,514 @@
+# ==============================================================================
+# ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ WORKFLOW TEMPLATES
+# ==============================================================================
+# Этот файл содержит примеры использования каждого шаблона по отдельности
+# ==============================================================================
+
+---
+# ==============================================================================
+# ПРИМЕР 1: Использование Data Validation Template
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: example-validation-
+  namespace: argo
+spec:
+  entrypoint: validate-example
+  arguments:
+    parameters:
+    - name: data-file
+      value: "s3://data-lake/raw/orders-2024.csv"
+  
+  templates:
+  - name: validate-example
+    steps:
+    - - name: validate-csv
+        templateRef:
+          name: data-validation-template
+          template: validate
+        arguments:
+          parameters:
+          - name: data-path
+            value: "{{workflow.parameters.data-file}}"
+          - name: validation-rules
+            value: |
+              {
+                "check_schema": true,
+                "check_nulls": true,
+                "check_duplicates": true,
+                "required_columns": ["order_id", "customer_id", "amount"],
+                "min_records": 1000
+              }
+          - name: fail-on-error
+            value: "true"
+          - name: data-format
+            value: "csv"
+    
+    - - name: print-results
+        template: print-validation
+        arguments:
+          parameters:
+          - name: status
+            value: "{{steps.validate-csv.outputs.parameters.validation-status}}"
+          - name: errors
+            value: "{{steps.validate-csv.outputs.parameters.error-count}}"
+          - name: report
+            value: "{{steps.validate-csv.outputs.parameters.validation-report}}"
+  
+  - name: print-validation
+    inputs:
+      parameters:
+      - name: status
+      - name: errors
+      - name: report
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args:
+      - |
+        echo "Validation Status: {{inputs.parameters.status}}"
+        echo "Error Count: {{inputs.parameters.errors}}"
+        echo "Report: {{inputs.parameters.report}}"
+
+---
+# ==============================================================================
+# ПРИМЕР 2: Использование ETL Processing Template
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: example-etl-
+  namespace: argo
+spec:
+  entrypoint: etl-example
+  arguments:
+    parameters:
+    - name: source
+      value: "s3://data-lake/raw/transactions.json"
+    - name: target
+      value: "s3://data-lake/processed/transactions/"
+  
+  templates:
+  - name: etl-example
+    dag:
+      tasks:
+      # Параллельная обработка разных трансформаций
+      - name: filter-transactions
+        templateRef:
+          name: etl-processing-template
+          template: process
+        arguments:
+          parameters:
+          - name: source-path
+            value: "{{workflow.parameters.source}}"
+          - name: target-path
+            value: "{{workflow.parameters.target}}filtered/"
+          - name: transformation-type
+            value: "filter"
+          - name: transformation-config
+            value: |
+              {
+                "filter": "amount > 1000",
+                "columns": ["transaction_id", "amount", "date"]
+              }
+          - name: source-format
+            value: "json"
+          - name: target-format
+            value: "parquet"
+      
+      - name: aggregate-transactions
+        templateRef:
+          name: etl-processing-template
+          template: process
+        arguments:
+          parameters:
+          - name: source-path
+            value: "{{workflow.parameters.source}}"
+          - name: target-path
+            value: "{{workflow.parameters.target}}aggregated/"
+          - name: transformation-type
+            value: "aggregate"
+          - name: transformation-config
+            value: |
+              {
+                "group_by": ["customer_id", "date"],
+                "aggregations": {
+                  "amount": "sum",
+                  "transaction_id": "count"
+                }
+              }
+          - name: source-format
+            value: "json"
+          - name: target-format
+            value: "parquet"
+      
+      # Обогащение запускается после фильтрации
+      - name: enrich-transactions
+        dependencies: [filter-transactions]
+        templateRef:
+          name: etl-processing-template
+          template: process
+        arguments:
+          parameters:
+          - name: source-path
+            value: "{{workflow.parameters.target}}filtered/"
+          - name: target-path
+            value: "{{workflow.parameters.target}}enriched/"
+          - name: transformation-type
+            value: "enrich"
+          - name: transformation-config
+            value: |
+              {
+                "lookup_table": "s3://data-lake/reference/customers.parquet",
+                "join_on": "customer_id"
+              }
+
+---
+# ==============================================================================
+# ПРИМЕР 3: Использование Notification Template
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: example-notification-
+  namespace: argo
+spec:
+  entrypoint: notification-example
+  
+  templates:
+  - name: notification-example
+    steps:
+    # Отправка в Slack
+    - - name: slack-notification
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "#data-alerts"
+          - name: subject
+            value: "Daily Report Generated"
+          - name: message
+            value: |
+              Daily analytics report has been generated.
+              
+              Records processed: 1,234,567
+              Processing time: 45 minutes
+              Status: Success
+          - name: status
+            value: "success"
+          - name: webhook-url
+            value: "https://hooks.slack.com/services/YOUR/WEBHOOK"
+    
+    # Отправка email параллельно
+    - - name: email-notification
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "email"
+          - name: recipients
+            value: "manager@company.com,team@company.com"
+          - name: subject
+            value: "Daily Analytics Report - Success"
+          - name: message
+            value: |
+              Dear Team,
+              
+              The daily analytics report has been successfully generated and is available in the data lake.
+              
+              Summary:
+              - Records processed: 1,234,567
+              - Processing time: 45 minutes
+              - Quality score: 98.5%
+              
+              Best regards,
+              Data Pipeline System
+          - name: status
+            value: "success"
+
+---
+# ==============================================================================
+# ПРИМЕР 4: Использование Conditional Execution Template
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: example-conditional-
+  namespace: argo
+spec:
+  entrypoint: conditional-example
+  
+  templates:
+  - name: conditional-example
+    steps:
+    # Генерация случайного числа для демонстрации
+    - - name: generate-metric
+        template: generate-random-metric
+    
+    # Проверка порогового значения
+    - - name: check-threshold
+        templateRef:
+          name: conditional-execution-template
+          template: evaluate
+        arguments:
+          parameters:
+          - name: condition-type
+            value: "threshold"
+          - name: condition-value
+            value: "{{steps.generate-metric.outputs.parameters.metric-value}}"
+          - name: condition-operator
+            value: "gt"
+          - name: threshold
+            value: "500"
+    
+    # Выполнение действия только если условие выполнено
+    - - name: execute-if-high
+        template: high-value-action
+        when: "{{steps.check-threshold.outputs.parameters.execution-decision}} == execute"
+      
+      - name: execute-if-low
+        template: low-value-action
+        when: "{{steps.check-threshold.outputs.parameters.execution-decision}} == skip"
+  
+  - name: generate-random-metric
+    outputs:
+      parameters:
+      - name: metric-value
+        valueFrom:
+          path: /tmp/metric.txt
+    container:
+      image: python:3.10-slim
+      command: [python, -c]
+      args:
+      - |
+        import random
+        value = random.randint(100, 1000)
+        with open("/tmp/metric.txt", "w") as f:
+          f.write(str(value))
+        print(f"Generated metric: {value}")
+  
+  - name: high-value-action
+    container:
+      image: alpine:latest
+      command: [echo]
+      args: ["Executing high-value processing..."]
+  
+  - name: low-value-action
+    container:
+      image: alpine:latest
+      command: [echo]
+      args: ["Skipping processing due to low value"]
+
+---
+# ==============================================================================
+# ПРИМЕР 5: Использование Batch File Processor Template
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: example-batch-
+  namespace: argo
+spec:
+  entrypoint: batch-example
+  arguments:
+    parameters:
+    - name: data-directory
+      value: "s3://data-lake/raw/daily-exports/"
+  
+  templates:
+  - name: batch-example
+    steps:
+    # Анализ всех CSV файлов
+    - - name: analyze-csv-files
+        templateRef:
+          name: batch-file-processor-template
+          template: process-batch
+        arguments:
+          parameters:
+          - name: source-directory
+            value: "{{workflow.parameters.data-directory}}"
+          - name: file-pattern
+            value: "*.csv"
+          - name: operation
+            value: "analyze"
+          - name: parallel-workers
+            value: "10"
+    
+    # Сжатие всех JSON файлов
+    - - name: compress-json-files
+        templateRef:
+          name: batch-file-processor-template
+          template: process-batch
+        arguments:
+          parameters:
+          - name: source-directory
+            value: "{{workflow.parameters.data-directory}}"
+          - name: file-pattern
+            value: "*.json"
+          - name: operation
+            value: "compress"
+          - name: parallel-workers
+            value: "8"
+          - name: fail-fast
+            value: "false"
+    
+    # Копирование Parquet файлов в архив
+    - - name: archive-parquet-files
+        templateRef:
+          name: batch-file-processor-template
+          template: process-batch
+        arguments:
+          parameters:
+          - name: source-directory
+            value: "{{workflow.parameters.data-directory}}"
+          - name: file-pattern
+            value: "*.parquet"
+          - name: operation
+            value: "copy"
+          - name: target-directory
+            value: "s3://data-lake/archive/"
+          - name: parallel-workers
+            value: "4"
+    
+    # Вывод статистики
+    - - name: print-statistics
+        template: print-stats
+        arguments:
+          parameters:
+          - name: csv-count
+            value: "{{steps.analyze-csv-files.outputs.parameters.files-processed}}"
+          - name: json-count
+            value: "{{steps.compress-json-files.outputs.parameters.files-processed}}"
+          - name: parquet-count
+            value: "{{steps.archive-parquet-files.outputs.parameters.files-processed}}"
+  
+  - name: print-stats
+    inputs:
+      parameters:
+      - name: csv-count
+      - name: json-count
+      - name: parquet-count
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args:
+      - |
+        echo "Batch Processing Summary:"
+        echo "CSV files analyzed: {{inputs.parameters.csv-count}}"
+        echo "JSON files compressed: {{inputs.parameters.json-count}}"
+        echo "Parquet files archived: {{inputs.parameters.parquet-count}}"
+
+---
+# ==============================================================================
+# ПРИМЕР 6: Комбинированный пример с обработкой ошибок
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: example-error-handling-
+  namespace: argo
+spec:
+  entrypoint: error-handling-example
+  
+  # Обработчик ошибок на уровне workflow
+  onExit: cleanup-and-notify
+  
+  templates:
+  - name: error-handling-example
+    steps:
+    - - name: risky-operation
+        template: risky-etl
+        continueOn:
+          failed: true
+    
+    - - name: check-status
+        templateRef:
+          name: conditional-execution-template
+          template: evaluate
+        arguments:
+          parameters:
+          - name: condition-type
+            value: "status"
+          - name: condition-value
+            value: "{{steps.risky-operation.status}}"
+          - name: condition-operator
+            value: "eq"
+          - name: threshold
+            value: "Succeeded"
+    
+    - - name: send-success
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "data-team"
+          - name: subject
+            value: "Operation Succeeded"
+          - name: message
+            value: "Risky operation completed successfully"
+          - name: status
+            value: "success"
+        when: "{{steps.check-status.outputs.parameters.condition-result}} == true"
+      
+      - name: send-failure
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "data-team,oncall"
+          - name: subject
+            value: "Operation Failed"
+          - name: message
+            value: "Risky operation failed, please investigate"
+          - name: status
+            value: "error"
+        when: "{{steps.check-status.outputs.parameters.condition-result}} == false"
+  
+  - name: risky-etl
+    templateRef:
+      name: etl-processing-template
+      template: process
+    arguments:
+      parameters:
+      - name: source-path
+        value: "s3://risky-data/input.csv"
+      - name: target-path
+        value: "s3://risky-data/output/"
+      - name: transformation-type
+        value: "transform"
+  
+  - name: cleanup-and-notify
+    steps:
+    - - name: final-notification
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "data-team"
+          - name: subject
+            value: "Workflow Completed: {{workflow.name}}"
+          - name: message
+            value: |
+              Workflow finished with status: {{workflow.status}}
+              Duration: {{workflow.duration}}s
+          - name: status
+            value: "{{workflow.status}}"

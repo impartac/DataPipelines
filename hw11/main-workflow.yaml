@@ -1,0 +1,293 @@
+# ==============================================================================
+# ОСНОВНОЙ WORKFLOW: DATA PROCESSING PIPELINE
+# ==============================================================================
+# Этот workflow демонстрирует использование всех универсальных шаблонов
+# в осмысленном пайплайне обработки данных:
+#
+# 1. Validation Stage - Валидация входных данных
+# 2. ETL Stage - Extract-Transform-Load обработка
+# 3. Quality Check - Проверка качества обработки (условное выполнение)
+# 4. Batch Processing - Пакетная обработка файлов (если QA passed)
+# 5. Notification - Уведомление о результатах
+#
+# Workflow параметры:
+#   - input-data-path: путь к входным данным
+#   - processing-mode: режим обработки (quick, standard, thorough)
+#   - notification-recipients: получатели уведомлений
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: data-pipeline-
+  namespace: argo
+spec:
+  # Входные параметры для всего workflow
+  arguments:
+    parameters:
+    - name: input-data-path
+      value: "s3://my-bucket/raw-data/orders.csv"
+    - name: output-data-path
+      value: "s3://my-bucket/processed-data/"
+    - name: processing-mode
+      value: "standard"
+      # Возможные значения: quick, standard, thorough
+    - name: notification-recipients
+      value: "data-team@company.com"
+    - name: slack-webhook
+      value: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    - name: quality-threshold
+      value: "1000"
+      # Минимальное количество записей для продолжения
+    - name: batch-file-pattern
+      value: "*.csv"
+  
+  # Основная последовательность выполнения
+  entrypoint: data-processing-pipeline
+  
+  templates:
+  # ==============================================================================
+  # ГЛАВНЫЙ ШАБЛОН ПАЙПЛАЙНА
+  # ==============================================================================
+  - name: data-processing-pipeline
+    steps:
+    # ------------------------------------------------------------------------
+    # STEP 1: START NOTIFICATION
+    # ------------------------------------------------------------------------
+    - - name: pipeline-start-notification
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "{{workflow.parameters.notification-recipients}}"
+          - name: subject
+            value: "Data Pipeline Started"
+          - name: message
+            value: |
+              Pipeline: {{workflow.name}}
+              Mode: {{workflow.parameters.processing-mode}}
+              Input: {{workflow.parameters.input-data-path}}
+          - name: status
+            value: "info"
+          - name: webhook-url
+            value: "{{workflow.parameters.slack-webhook}}"
+    
+    # ------------------------------------------------------------------------
+    # STEP 2: DATA VALIDATION
+    # ------------------------------------------------------------------------
+    - - name: validate-input-data
+        templateRef:
+          name: data-validation-template
+          template: validate
+        arguments:
+          parameters:
+          - name: data-path
+            value: "{{workflow.parameters.input-data-path}}"
+          - name: validation-rules
+            value: |
+              {
+                "check_schema": true,
+                "check_nulls": true,
+                "check_duplicates": true,
+                "min_records": 100
+              }
+          - name: fail-on-error
+            value: "false"
+          - name: data-format
+            value: "csv"
+    
+    # ------------------------------------------------------------------------
+    # STEP 3: CHECK VALIDATION RESULT
+    # ------------------------------------------------------------------------
+    - - name: check-validation-status
+        templateRef:
+          name: conditional-execution-template
+          template: evaluate
+        arguments:
+          parameters:
+          - name: condition-type
+            value: "status"
+          - name: condition-value
+            value: "{{steps.validate-input-data.outputs.parameters.validation-status}}"
+          - name: condition-operator
+            value: "eq"
+          - name: threshold
+            value: "success"
+    
+    # ------------------------------------------------------------------------
+    # STEP 4: ETL PROCESSING (если валидация успешна)
+    # ------------------------------------------------------------------------
+    - - name: etl-processing
+        templateRef:
+          name: etl-processing-template
+          template: process
+        arguments:
+          parameters:
+          - name: source-path
+            value: "{{workflow.parameters.input-data-path}}"
+          - name: target-path
+            value: "{{workflow.parameters.output-data-path}}"
+          - name: transformation-type
+            value: "filter"
+          - name: transformation-config
+            value: |
+              {
+                "filter_column": "status",
+                "filter_value": "completed",
+                "add_timestamp": true
+              }
+          - name: chunk-size
+            value: "5000"
+          - name: source-format
+            value: "csv"
+          - name: target-format
+            value: "parquet"
+        when: "{{steps.check-validation-status.outputs.parameters.execution-decision}} == execute"
+    
+    # ------------------------------------------------------------------------
+    # STEP 5: QUALITY CHECK (проверка результатов ETL)
+    # ------------------------------------------------------------------------
+    - - name: quality-check
+        templateRef:
+          name: conditional-execution-template
+          template: evaluate
+        arguments:
+          parameters:
+          - name: condition-type
+            value: "threshold"
+          - name: condition-value
+            value: "{{steps.etl-processing.outputs.parameters.records-processed}}"
+          - name: condition-operator
+            value: "gte"
+          - name: threshold
+            value: "{{workflow.parameters.quality-threshold}}"
+        when: "{{steps.check-validation-status.outputs.parameters.execution-decision}} == execute"
+    
+    # ------------------------------------------------------------------------
+    # STEP 6: BATCH FILE PROCESSING (если QA прошла)
+    # ------------------------------------------------------------------------
+    - - name: batch-file-processing
+        templateRef:
+          name: batch-file-processor-template
+          template: process-batch
+        arguments:
+          parameters:
+          - name: source-directory
+            value: "{{workflow.parameters.output-data-path}}"
+          - name: file-pattern
+            value: "{{workflow.parameters.batch-file-pattern}}"
+          - name: operation
+            value: "compress"
+          - name: parallel-workers
+            value: "8"
+          - name: fail-fast
+            value: "false"
+        when: "{{steps.quality-check.outputs.parameters.execution-decision}} == execute"
+    
+    # ------------------------------------------------------------------------
+    # STEP 7: SUCCESS NOTIFICATION
+    # ------------------------------------------------------------------------
+    - - name: success-notification
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "{{workflow.parameters.notification-recipients}}"
+          - name: subject
+            value: "Pipeline Completed Successfully"
+          - name: message
+            value: |
+              ✅ Data Pipeline Completed
+              
+              Pipeline: {{workflow.name}}
+              
+              📊 Validation:
+              - Status: {{steps.validate-input-data.outputs.parameters.validation-status}}
+              - Errors: {{steps.validate-input-data.outputs.parameters.error-count}}
+              
+              ⚙️ ETL Processing:
+              - Records Processed: {{steps.etl-processing.outputs.parameters.records-processed}}
+              - Processing Time: {{steps.etl-processing.outputs.parameters.processing-time}}s
+              - Output Size: {{steps.etl-processing.outputs.parameters.output-size}} bytes
+              
+              📦 Batch Processing:
+              - Files Processed: {{steps.batch-file-processing.outputs.parameters.files-processed}}
+              - Files Failed: {{steps.batch-file-processing.outputs.parameters.files-failed}}
+              - Total Size: {{steps.batch-file-processing.outputs.parameters.total-size}} bytes
+              
+              Duration: {{workflow.duration}}s
+          - name: status
+            value: "success"
+          - name: webhook-url
+            value: "{{workflow.parameters.slack-webhook}}"
+        when: "{{steps.quality-check.outputs.parameters.execution-decision}} == execute"
+    
+    # ------------------------------------------------------------------------
+    # STEP 8: FAILURE NOTIFICATION
+    # ------------------------------------------------------------------------
+    - - name: failure-notification
+        templateRef:
+          name: notification-template
+          template: send
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "{{workflow.parameters.notification-recipients}}"
+          - name: subject
+            value: "Pipeline Failed or Skipped"
+          - name: message
+            value: |
+              ❌ Data Pipeline Did Not Complete Successfully
+              
+              Pipeline: {{workflow.name}}
+              
+              Validation Status: {{steps.validate-input-data.outputs.parameters.validation-status}}
+              Validation Errors: {{steps.validate-input-data.outputs.parameters.error-count}}
+              
+              Quality Check Decision: {{steps.quality-check.outputs.parameters.execution-decision}}
+              Reason: {{steps.quality-check.outputs.parameters.decision-reason}}
+              
+              Please review the validation report and logs.
+          - name: status
+            value: "error"
+          - name: webhook-url
+            value: "{{workflow.parameters.slack-webhook}}"
+        when: "{{steps.quality-check.outputs.parameters.execution-decision}} == skip"
+  
+  # ==============================================================================
+  # ПОЛИТИКИ ВЫПОЛНЕНИЯ
+  # ==============================================================================
+  
+  # Политика повтора при ошибках
+  retryStrategy:
+    limit: 2
+    retryPolicy: "OnFailure"
+    backoff:
+      duration: "30s"
+      factor: 2
+      maxDuration: "5m"
+  
+  # Таймаут для всего workflow
+  activeDeadlineSeconds: 3600  # 1 час
+  
+  # Политика удаления завершенных pods
+  podGC:
+    strategy: OnPodSuccess
+  
+  # Приоритет выполнения
+  priority: 100
+  
+  # TTL (Time To Live) после завершения
+  ttlStrategy:
+    secondsAfterCompletion: 86400  # 24 часа
+    secondsAfterSuccess: 86400     # 24 часа
+    secondsAfterFailure: 172800    # 48 часов
