@@ -1,0 +1,178 @@
+# Быстрый старт
+
+## Установка
+
+### Вариант 1: Docker (рекомендуется - работает везде!)
+
+1. Убедитесь, что установлен Docker:
+```bash
+docker --version
+docker-compose --version
+```
+
+2. Запустите бенчмарк:
+```bash
+# Windows PowerShell
+.\run_docker.ps1 small
+
+# Linux/MacOS/WSL
+./run_docker.sh small
+
+# Или напрямую через docker-compose
+docker-compose up spark-benchmark
+```
+
+**Готово!** Результаты появятся в папке `reports/`
+
+### Вариант 2: Локальная установка
+
+1. Установите зависимости:
+```bash
+cd hw5
+pip install -r requirements.txt
+```
+
+2. Убедитесь, что установлен Java (требуется для Spark):
+```bash
+java -version
+```
+
+## Запуск
+
+### С Docker (работает на Windows/Linux/MacOS)
+
+```bash
+# Быстрый тест (10,000 строк, ~2-3 минуты)
+docker-compose up spark-benchmark
+
+# Средний тест (100,000 строк, ~5-10 минут)
+docker-compose --profile medium up spark-benchmark-medium
+
+# Большой тест (1,000,000 строк, ~15-30 минут)
+docker-compose --profile large up spark-benchmark-large
+```
+
+**Удобные скрипты:**
+```powershell
+# Windows PowerShell
+.\run_docker.ps1 small
+.\run_docker.ps1 medium
+.\run_docker.ps1 large
+```
+
+```bash
+# Linux/MacOS/WSL
+./run_docker.sh small
+./run_docker.sh medium
+./run_docker.sh large
+```
+
+### Локально
+
+### Быстрый тест (малый датасет)
+```bash
+python main.py small
+```
+Выполняется ~1-2 минуты, датасет 10,000 строк.
+
+### Стандартный тест (средний датасет)
+```bash
+python main.py medium
+```
+или просто:
+```bash
+python main.py
+```
+Выполняется ~3-5 минут, датасет 100,000 строк.
+
+### Полный тест (большой датасет)
+```bash
+python main.py large
+```
+Выполняется ~10-15 минут, датасет 1,000,000 строк.
+
+## Результаты
+
+После выполнения появится файл `reports/performance_report_<размер>.md` с:
+- [ ] Таблицами производительности
+- [ ] Кодом всех тест-кейсов
+- [ ] Объяснением оптимизаций Catalyst/Tungsten
+- [ ] Планами выполнения (explain)
+- [ ] Выводами и рекомендациями
+
+## Что тестируется
+
+### DataFrame vs RDD (4 кейса)
+1. Множественные агрегации (sum, avg, min, max, count)
+2. Оконные функции (топ-N в группе)
+3. Вложенные типы (array/struct операции)
+4. Условная логика (when/otherwise vs filter+union)
+
+### SQL vs DataFrame API (2 кейса)
+1. Комплексная агрегация с HAVING
+2. Коррелированный подзапрос
+
+## Ожидаемые результаты
+
+DataFrame должен быть **2-10x быстрее** RDD для всех кейсов:
+- Множественные агрегации: ~3-5x
+- Оконные функции: ~2-4x  
+- Вложенные типы: ~5-10x
+- Условная логика: ~3-6x
+
+SQL и DataFrame API обычно дают **одинаковую производительность** (±5%).
+
+## Структура отчета
+
+```markdown
+# Сравнение производительности DataFrame, RDD и SQL
+
+## Часть 1: DataFrame vs RDD
+### Сводная таблица результатов
+### Кейс 1: Множественные агрегации
+- Код DataFrame подхода
+- Код RDD подхода
+- Объяснение оптимизаций
+### Кейс 2-4: ...
+
+## Часть 2: SQL vs DataFrame API
+### Кейс 5-6: ...
+- SQL подход
+- DataFrame API подход
+- Анализ планов выполнения
+- Объяснение разницы
+
+## Выводы и рекомендации
+- Когда использовать DataFrame
+- Когда использовать RDD
+- Когда использовать SQL vs DataFrame API
+```
+
+## Устранение проблем
+
+### Ошибка "Java not found"
+Установите Java 8 или 11:
+```bash
+# Windows
+winget install Oracle.JDK.17
+```
+
+### Ошибка памяти (OutOfMemoryError)
+Уменьшите размер датасета или увеличьте память в `config.py`:
+```python
+SPARK_CONFIG = {
+    "spark.driver.memory": "8g",  # Увеличьте до 8G
+}
+```
+
+### Медленное выполнение
+Уменьшите количество итераций в `config.py`:
+```python
+BENCHMARK_ITERATIONS = 1  # Вместо 3
+```
+
+## Дополнительная информация
+
+- Подробная документация: см. `README.md`
+- Настройка конфигурации: см. `config.py`
+- Исходный код бенчмарков: см. `benchmark.py`
