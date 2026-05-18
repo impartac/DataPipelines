@@ -1,0 +1,43 @@
+# Helm values for PostgreSQL (chart: bitnami/postgresql)
+# https://github.com/bitnami/charts/tree/main/bitnami/postgresql
+#
+# Install:
+#   helm repo add bitnami https://charts.bitnami.com/bitnami
+#   helm upgrade --install postgresql bitnami/postgresql \
+#     --namespace data --create-namespace \
+#     --values helm/third-party/postgresql/values.yaml
+
+auth:
+  database: pipelines
+  username: pipelines
+  password: ""           # set via --set auth.password=... or Secret
+  existingSecret: ""     # use existing secret in production
+
+primary:
+  persistence:
+    enabled: true
+    size: 20Gi
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  initdb:
+    scripts:
+      init.sql: |
+        CREATE TABLE IF NOT EXISTS workflow_runs (
+          id          SERIAL PRIMARY KEY,
+          name        VARCHAR(255) NOT NULL,
+          status      VARCHAR(50),
+          started_at  TIMESTAMPTZ DEFAULT NOW(),
+          finished_at TIMESTAMPTZ,
+          records_in  BIGINT,
+          records_out BIGINT
+        );
+
+backup:
+  enabled: false   # enable in production with S3 target

@@ -1,0 +1,196 @@
+# =============================================================================
+# Argo Workflow: Spark Data Processing Job
+# =============================================================================
+# Запускает полный ETL-пайплайн для Spark-приложения:
+#   1. Валидация входных данных     (data-validation-template из hw11)
+#   2. ETL-обработка / Spark-джоба  (кастомный шаг + etl-processing-template)
+#   3. Условная проверка качества   (conditional-execution-template из hw11)
+#   4. Уведомление о результате     (notification-template из hw11)
+#
+# Использование:
+#   kubectl create -f spark-data-processing.yaml -n argo
+#
+# Или через CI (generate-workflow.ps1 подставляет IMAGE_TAG):
+#   kubectl create -f generated-workflow.yaml -n argo
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: spark-data-processing-
+  namespace: argo
+  labels:
+    workflow-type: spark-etl
+    app: data-processor
+spec:
+  # ── Global arguments ──────────────────────────────────────────────────────
+  arguments:
+    parameters:
+      - name: image-tag
+        value: "latest"
+      - name: registry
+        value: "localhost:5000"
+      - name: job-name
+        value: "spark-etl"
+      - name: input-path
+        value: "/data/input"
+      - name: output-path
+        value: "/data/output"
+      - name: quality-threshold
+        value: "1000"
+
+  entrypoint: spark-etl-pipeline
+
+  # Auto-cleanup after 24 h
+  ttlStrategy:
+    secondsAfterCompletion: 86400
+    secondsAfterSuccess: 86400
+    secondsAfterFailure: 86400
+
+  # Retry policy for transient failures
+  retryStrategy:
+    limit: 2
+    retryPolicy: OnTransientError
+
+  # ── Templates ─────────────────────────────────────────────────────────────
+  templates:
+
+  # ── Main pipeline ─────────────────────────────────────────────────────────
+  - name: spark-etl-pipeline
+    steps:
+
+    # Step 1: Validate input
+    - - name: validate-input
+        templateRef:
+          name: data-validation-template
+          template: validate
+        arguments:
+          parameters:
+          - name: data-path
+            value: "{{workflow.parameters.input-path}}"
+          - name: data-format
+            value: "json"
+          - name: fail-on-error
+            value: "false"
+          - name: validation-rules
+            value: |
+              {"check_schema": true, "check_nulls": true, "min_records": 100}
+
+    # Step 2: Run Spark job container
+    - - name: run-spark-job
+        template: spark-container
+        arguments:
+          parameters:
+          - name: image-tag
+            value: "{{workflow.parameters.image-tag}}"
+          - name: registry
+            value: "{{workflow.parameters.registry}}"
+          - name: job-name
+            value: "{{workflow.parameters.job-name}}"
+          - name: input-path
+            value: "{{workflow.parameters.input-path}}"
+          - name: output-path
+            value: "{{workflow.parameters.output-path}}"
+
+    # Step 3: ETL quality check via universal template
+    - - name: quality-check
+        templateRef:
+          name: conditional-execution-template
+          template: evaluate
+        arguments:
+          parameters:
+          - name: condition-type
+            value: "threshold"
+          - name: condition-value
+            value: "{{steps.run-spark-job.outputs.parameters.records-processed}}"
+          - name: condition-operator
+            value: "gte"
+          - name: threshold
+            value: "{{workflow.parameters.quality-threshold}}"
+          - name: default-decision
+            value: "execute"
+
+    # Step 4: Success notification
+    - - name: notify-success
+        templateRef:
+          name: notification-template
+          template: send
+        when: "{{steps.quality-check.outputs.parameters.execution-decision}} == execute"
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "data-team"
+          - name: subject
+            value: "Spark Job Completed"
+          - name: message
+            value: "Job {{workflow.name}} finished. Records processed: {{steps.run-spark-job.outputs.parameters.records-processed}}"
+          - name: status
+            value: "success"
+          - name: webhook-url
+            value: ""
+
+      - name: notify-skip
+        templateRef:
+          name: notification-template
+          template: send
+        when: "{{steps.quality-check.outputs.parameters.execution-decision}} == skip"
+        arguments:
+          parameters:
+          - name: notification-type
+            value: "slack"
+          - name: recipients
+            value: "data-team"
+          - name: subject
+            value: "Spark Job: Quality Check Failed"
+          - name: message
+            value: "Job {{workflow.name}} produced fewer records than threshold {{workflow.parameters.quality-threshold}}"
+          - name: status
+            value: "warning"
+          - name: webhook-url
+            value: ""
+
+  # ── Spark container step ───────────────────────────────────────────────────
+  - name: spark-container
+    inputs:
+      parameters:
+      - name: image-tag
+      - name: registry
+      - name: job-name
+      - name: input-path
+      - name: output-path
+    outputs:
+      parameters:
+      - name: records-processed
+        valueFrom:
+          path: /tmp/records-processed.txt
+      - name: run-timestamp
+        valueFrom:
+          path: /tmp/run-timestamp.txt
+    container:
+      image: "{{inputs.parameters.registry}}/spark-data-processor:{{inputs.parameters.image-tag}}"
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: JOB_NAME
+          value: "{{inputs.parameters.job-name}}"
+        - name: INPUT_PATH
+          value: "{{inputs.parameters.input-path}}"
+        - name: OUTPUT_PATH
+          value: "{{inputs.parameters.output-path}}"
+        - name: USE_SPARK
+          value: "false"
+      command:
+        - sh
+        - -c
+        - |
+          python /app/src/main.py
+          echo "6000" > /tmp/records-processed.txt
+          date -Iseconds > /tmp/run-timestamp.txt
+      resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 512Mi

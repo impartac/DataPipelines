@@ -1,0 +1,33 @@
+replicaCount: 1
+
+image:
+  repository: localhost:5000/data-ui
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: dashboard.local
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+env:
+  API_BASE_URL: "http://argo-server:2746"
+  ENV_NAME: "dev"

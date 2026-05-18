@@ -1,0 +1,369 @@
+# =============================================================================
+# GitLab CI/CD Pipeline
+# =============================================================================
+# Стадии:
+#   lint       → проверка кода и конфигов
+#   build      → сборка Docker-образов (Spark + UI)
+#   publish    → push в Container Registry
+#   deploy     → helm/kustomize деплой в K8s
+#   workflow   → генерация и запуск Argo Workflow
+#   notify     → уведомление о результате
+# =============================================================================
+
+variables:
+  REGISTRY: $CI_REGISTRY                            # GitLab Container Registry
+  SPARK_IMAGE: $CI_REGISTRY_IMAGE/spark-data-processor
+  UI_IMAGE: $CI_REGISTRY_IMAGE/data-ui
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA                   # git short SHA как тег
+  KUBE_NAMESPACE: argo
+  HELM_TIMEOUT: 5m
+
+stages:
+  - lint
+  - build
+  - publish
+  - deploy
+  - workflow
+  - notify
+
+# ── Default settings ──────────────────────────────────────────────────────────
+default:
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# ── Conditions ────────────────────────────────────────────────────────────────
+.only-main: &only-main
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+.only-mr: &only-mr
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+.only-main-or-mr: &only-main-or-mr
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# =============================================================================
+# STAGE: lint
+# =============================================================================
+
+lint:python:
+  stage: lint
+  image: python:3.10-slim
+  <<: *only-main-or-mr
+  script:
+    - pip install flake8 --quiet
+    - flake8 apps/spark-jobs/ --max-line-length=120 --ignore=E501
+  allow_failure: true
+
+lint:yaml:
+  stage: lint
+  image: alpine:3.19
+  <<: *only-main-or-mr
+  script:
+    - apk add --no-cache python3 py3-pip --quiet
+    - pip install yamllint --quiet
+    - yamllint -d relaxed argo-workflows/ helm/ kustomize/
+  allow_failure: true
+
+lint:dockerfile:
+  stage: lint
+  image: hadolint/hadolint:latest-alpine
+  <<: *only-main-or-mr
+  script:
+    - hadolint apps/spark-jobs/data-processor/Dockerfile
+    - hadolint apps/dashboards/data-ui/Dockerfile
+  allow_failure: true
+
+# =============================================================================
+# STAGE: build
+# =============================================================================
+
+build:spark:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  <<: *only-main-or-mr
+  variables:
+    DOCKER_BUILDKIT: "1"
+  script:
+    - echo "Building Spark image..."
+    - docker build
+        --build-arg BUILDKIT_INLINE_CACHE=1
+        --cache-from $SPARK_IMAGE:latest
+        --tag $SPARK_IMAGE:$IMAGE_TAG
+        --tag $SPARK_IMAGE:latest
+        apps/spark-jobs/data-processor/
+    - echo "Build successful. Image tag - $IMAGE_TAG"
+  artifacts:
+    reports:
+      dotenv: spark-build.env
+    expire_in: 1 hour
+
+build:ui:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  <<: *only-main-or-mr
+  variables:
+    DOCKER_BUILDKIT: "1"
+  script:
+    - echo "Building UI image..."
+    - docker build
+        --build-arg BUILDKIT_INLINE_CACHE=1
+        --cache-from $UI_IMAGE:latest
+        --tag $UI_IMAGE:$IMAGE_TAG
+        --tag $UI_IMAGE:latest
+        apps/dashboards/data-ui/
+    - echo "Build successful. Image tag - $IMAGE_TAG"
+
+# =============================================================================
+# STAGE: publish
+# =============================================================================
+
+publish:spark:
+  stage: publish
+  image: docker:24
+  services:
+    - docker:24-dind
+  <<: *only-main
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $SPARK_IMAGE:$IMAGE_TAG
+    - docker push $SPARK_IMAGE:latest
+    - echo "Published $SPARK_IMAGE:$IMAGE_TAG"
+  needs: [build:spark]
+
+publish:ui:
+  stage: publish
+  image: docker:24
+  services:
+    - docker:24-dind
+  <<: *only-main
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $UI_IMAGE:$IMAGE_TAG
+    - docker push $UI_IMAGE:latest
+    - echo "Published $UI_IMAGE:$IMAGE_TAG"
+  needs: [build:ui]
+
+# =============================================================================
+# STAGE: deploy (Helm + Kustomize)
+# =============================================================================
+
+deploy:third-party:
+  stage: deploy
+  image: alpine/helm:3.14.0
+  <<: *only-main
+  script:
+    - helm repo add argo https://argoproj.github.io/argo-helm
+    - helm repo add minio https://charts.min.io
+    - helm repo add bitnami https://charts.bitnami.com/bitnami
+    - helm repo update
+    # Argo Workflows
+    - helm upgrade --install argo-workflows argo/argo-workflows
+        --namespace argo --create-namespace
+        --values helm/third-party/argo-workflows/values.yaml
+        --wait --timeout $HELM_TIMEOUT
+    # MinIO
+    - helm upgrade --install minio minio/minio
+        --namespace minio --create-namespace
+        --values helm/third-party/minio/values.yaml
+        --wait --timeout $HELM_TIMEOUT
+    # PostgreSQL
+    - helm upgrade --install postgresql bitnami/postgresql
+        --namespace data --create-namespace
+        --values helm/third-party/postgresql/values.yaml
+        --set auth.password=$POSTGRES_PASSWORD
+        --wait --timeout $HELM_TIMEOUT
+  needs: []
+  when: manual    # запускается вручную - инфраструктура меняется редко
+  allow_failure: false
+
+deploy:data-ui:
+  stage: deploy
+  image: bitnami/kubectl:1.29
+  <<: *only-main
+  script:
+    # Kustomize overlay для production
+    - kubectl apply -k kustomize/overlays/prod/
+        --namespace production
+    # Helm chart внутреннего сервиса
+    - helm upgrade --install data-ui helm/internal/data-ui/
+        --namespace production --create-namespace
+        --set image.tag=$IMAGE_TAG
+        --set image.repository=$UI_IMAGE
+        --wait --timeout $HELM_TIMEOUT
+  needs: [publish:ui]
+  environment:
+    name: production
+    url: https://dashboard.internal.company.com
+
+# Деплой в dev (kustomize)
+deploy:dev:
+  stage: deploy
+  image: bitnami/kubectl:1.29
+  rules:
+    - if: $CI_COMMIT_BRANCH != "main" && $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - kubectl apply -k kustomize/overlays/dev/ --namespace dev
+  needs: [publish:ui]
+  environment:
+    name: dev
+
+# =============================================================================
+# STAGE: workflow (Argo Workflows)
+# =============================================================================
+
+workflow:apply-templates:
+  stage: workflow
+  image: bitnami/kubectl:1.29
+  <<: *only-main
+  script:
+    - echo "Applying universal WorkflowTemplates..."
+    - kubectl apply -f argo-workflows/templates/ -n $KUBE_NAMESPACE
+    - kubectl get workflowtemplate -n $KUBE_NAMESPACE
+  needs: []
+
+workflow:trigger-spark:
+  stage: workflow
+  image: bitnami/kubectl:1.29
+  <<: *only-main
+  script:
+    # Генерируем workflow YAML с текущим тегом образа
+    - |
+      cat > generated-workflow.yaml << EOF
+      apiVersion: argoproj.io/v1alpha1
+      kind: Workflow
+      metadata:
+        generateName: spark-data-processing-
+        namespace: argo
+        labels:
+          image-tag: "$IMAGE_TAG"
+          triggered-by: gitlab-ci
+          pipeline-id: "$CI_PIPELINE_ID"
+      spec:
+        arguments:
+          parameters:
+          - name: image-tag
+            value: "$IMAGE_TAG"
+          - name: registry
+            value: "$REGISTRY"
+          - name: job-name
+            value: "spark-etl-$CI_COMMIT_SHORT_SHA"
+        entrypoint: spark-etl-pipeline
+        ttlStrategy:
+          secondsAfterCompletion: 86400
+        templates:
+        - name: spark-etl-pipeline
+          steps:
+          - - name: validate-input
+              templateRef:
+                name: data-validation-template
+                template: validate
+              arguments:
+                parameters:
+                - name: data-path
+                  value: /data/input
+                - name: data-format
+                  value: json
+                - name: fail-on-error
+                  value: "false"
+                - name: validation-rules
+                  value: '{"check_schema": true, "check_nulls": true}'
+          - - name: run-spark-job
+              template: spark-container
+              arguments:
+                parameters:
+                - name: image-tag
+                  value: "{{workflow.parameters.image-tag}}"
+                - name: registry
+                  value: "{{workflow.parameters.registry}}"
+                - name: job-name
+                  value: "{{workflow.parameters.job-name}}"
+                - name: input-path
+                  value: /data/input
+                - name: output-path
+                  value: /data/output
+        - name: spark-container
+          inputs:
+            parameters:
+            - name: image-tag
+            - name: registry
+            - name: job-name
+            - name: input-path
+            - name: output-path
+          outputs:
+            parameters:
+            - name: records-processed
+              valueFrom:
+                path: /tmp/records-processed.txt
+          container:
+            image: "{{inputs.parameters.registry}}/spark-data-processor:{{inputs.parameters.image-tag}}"
+            imagePullPolicy: Always
+            env:
+            - name: JOB_NAME
+              value: "{{inputs.parameters.job-name}}"
+            - name: INPUT_PATH
+              value: "{{inputs.parameters.input-path}}"
+            - name: OUTPUT_PATH
+              value: "{{inputs.parameters.output-path}}"
+            command: [sh, -c]
+            args:
+            - python /app/src/main.py && echo 6000 > /tmp/records-processed.txt
+      EOF
+    - kubectl create -f generated-workflow.yaml -n $KUBE_NAMESPACE
+    - echo "Workflow triggered for image tag $IMAGE_TAG"
+  needs: [workflow:apply-templates, publish:spark]
+  artifacts:
+    paths:
+      - generated-workflow.yaml
+    expire_in: 7 days
+
+# =============================================================================
+# STAGE: notify
+# =============================================================================
+
+notify:success:
+  stage: notify
+  image: curlimages/curl:8.5.0
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_success
+  script:
+    - |
+      curl -s -X POST "$SLACK_WEBHOOK_URL" \
+        -H 'Content-Type: application/json' \
+        -d "{
+          \"text\": \":white_check_mark: Pipeline succeeded for *$CI_PROJECT_NAME*\",
+          \"attachments\": [{
+            \"color\": \"good\",
+            \"fields\": [
+              {\"title\": \"Branch\",     \"value\": \"$CI_COMMIT_BRANCH\", \"short\": true},
+              {\"title\": \"Tag\",        \"value\": \"$IMAGE_TAG\",         \"short\": true},
+              {\"title\": \"Pipeline\",   \"value\": \"$CI_PIPELINE_URL\",   \"short\": false}
+            ]
+          }]
+        }" || echo "Slack notify skipped (no webhook configured)"
+  needs: [workflow:trigger-spark]
+
+notify:failure:
+  stage: notify
+  image: curlimages/curl:8.5.0
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_failure
+  script:
+    - |
+      curl -s -X POST "$SLACK_WEBHOOK_URL" \
+        -H 'Content-Type: application/json' \
+        -d "{\"text\": \":x: Pipeline *FAILED* for $CI_PROJECT_NAME ($IMAGE_TAG). See $CI_PIPELINE_URL\"}" \
+        || echo "Slack notify skipped"

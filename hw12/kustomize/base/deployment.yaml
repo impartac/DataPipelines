@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-ui
+  labels:
+    app: data-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-ui
+  template:
+    metadata:
+      labels:
+        app: data-ui
+    spec:
+      containers:
+        - name: data-ui
+          image: localhost:5000/data-ui:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV_NAME
+              value: base
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

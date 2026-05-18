@@ -1,0 +1,37 @@
+# Helm values for Spark Operator (chart: spark-operator/spark-operator)
+# https://github.com/kubeflow/spark-operator
+#
+# Install:
+#   helm repo add spark-operator https://kubeflow.github.io/spark-operator
+#   helm upgrade --install spark-operator spark-operator/spark-operator \
+#     --namespace spark-operator --create-namespace \
+#     --values helm/third-party/spark-operator/values.yaml
+
+image:
+  tag: v1beta2-1.3.8-3.1.1
+
+sparkJobNamespace: ""   # empty = all namespaces
+
+webhook:
+  enable: true
+  port: 8080
+
+metrics:
+  enable: true
+  port: 10254
+
+serviceAccounts:
+  spark:
+    create: true
+    name: spark
+  sparkoperator:
+    create: true
+    name: spark-operator
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 300Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

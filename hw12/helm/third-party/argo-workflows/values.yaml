@@ -1,0 +1,43 @@
+# Helm values for Argo Workflows (official chart: argo/argo-workflows)
+# https://github.com/argoproj/argo-helm/tree/main/charts/argo-workflows
+#
+# Install:
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm upgrade --install argo-workflows argo/argo-workflows \
+#     --namespace argo --create-namespace \
+#     --values helm/third-party/argo-workflows/values.yaml
+
+server:
+  enabled: true
+  # Disable auth for development; use SSO/token in production
+  extraArgs:
+    - --auth-mode=server
+
+  service:
+    type: LoadBalancer
+    port: 2746
+
+  ingress:
+    enabled: false   # enable + set host for production
+
+workflow:
+  serviceAccount:
+    create: true
+
+controller:
+  workflowNamespaces:
+    - argo
+    - default
+
+# Use MinIO as artifact repository
+artifactRepository:
+  s3:
+    bucket: argo-artifacts
+    endpoint: minio:9000
+    insecure: true
+    accessKeySecret:
+      name: minio-credentials
+      key: accessKey
+    secretKeySecret:
+      name: minio-credentials
+      key: secretKey

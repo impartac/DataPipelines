@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+bases:
+  - ../../base
+
+namespace: production
+
+namePrefix: prod-
+
+commonLabels:
+  env: production
+
+patches:
+  - target:
+      kind: Deployment
+      name: data-ui
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: production
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: registry.gitlab.com/myorg/data-ui:1.0.0
+      - op: add
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: add
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+
+configMapGenerator:
+  - name: data-ui-config
+    literals:
+      - ENV=production
+      - LOG_LEVEL=warn
+      - API_URL=https://argo.internal.company.com
