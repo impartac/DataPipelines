@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "my-app"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/agent-inject-secret-db-static: "secret/data/production/my-app/config"
+        vault.hashicorp.com/agent-inject-template-db-static: |
+          {{- with secret "secret/data/production/my-app/config" -}}
+          export API_KEY="{{ .Data.data.api_key }}"
+          export REDIS_URL="{{ .Data.data.redis_url }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-db-dynamic: "database/creds/my-app-role"
+        vault.hashicorp.com/agent-inject-template-db-dynamic: |
+          {{- with secret "database/creds/my-app-role" -}}
+          export DB_USER="{{ .Data.username }}"
+          export DB_PASS="{{ .Data.password }}"
+          export DB_URL="postgresql://{{ .Data.username }}:{{ .Data.password }}@postgres:5432/appdb"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-command-db-dynamic: "pkill -HUP my-app || true"
+    spec:
+      serviceAccountName: my-app
+      containers:
+      - name: app
+        image: my-app:1.0.0
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            source /vault/secrets/db-static
+            source /vault/secrets/db-dynamic
+            exec ./my-app
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: app-config
+  namespace: production
+spec:
+  type: kv-v2
+  mount: secret
+  path: production/my-app/config
+  destination:
+    name: app-config-k8s
+    create: true
+  refreshAfter: 30s
+  vaultAuthRef: vault-auth
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: db-dynamic
+  namespace: production
+spec:
+  mount: database
+  path: creds/my-app-role
+  destination:
+    name: db-credentials-k8s
+    create: true
+  rolloutRestartTargets:
+  - kind: Deployment
+    name: my-app
+  vaultAuthRef: vault-auth
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: vault-auth
+  namespace: production
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: my-app
+    serviceAccount: my-app
+    audiences:
+    - vault
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-app
+  namespace: production

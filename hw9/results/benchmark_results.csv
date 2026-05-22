@@ -1,0 +1,25 @@
+engine,query_id,cold_s,warm_mean_s,warm_median_s,warm_min_s,warm_max_s,error
+Trino,1,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 14:7: Column 'l_shipdate' cannot be resolved"", query_id=20260519_095855_00000_tc5if)"
+Trino,3,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 8:7: Column 'c_mktsegment' cannot be resolved"", query_id=20260519_095856_00001_tc5if)"
+Trino,4,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 6:7: Column 'o_orderdate' cannot be resolved"", query_id=20260519_095856_00002_tc5if)"
+Trino,5,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 6:7: Column 'c_custkey' cannot be resolved"", query_id=20260519_095856_00003_tc5if)"
+Trino,6,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 4:7: Column 'l_shipdate' cannot be resolved"", query_id=20260519_095856_00004_tc5if)"
+Trino,7,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 15:11: Column 's_suppkey' cannot be resolved"", query_id=20260519_095856_00005_tc5if)"
+Trino,9,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 13:11: Column 's_suppkey' cannot be resolved"", query_id=20260519_095856_00006_tc5if)"
+Trino,12,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 15:7: Column 'o_orderkey' cannot be resolved"", query_id=20260519_095856_00007_tc5if)"
+Trino,14,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 9:7: Column 'l_partkey' cannot be resolved"", query_id=20260519_095856_00008_tc5if)"
+Trino,17,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 4:7: Column 'p_partkey' cannot be resolved"", query_id=20260519_095856_00009_tc5if)"
+Trino,18,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 10:7: Column 'o_orderkey' cannot be resolved"", query_id=20260519_095856_00010_tc5if)"
+Trino,21,0.0,0.0,0.0,0.0,0.0,"TrinoUserError(type=USER_ERROR, name=COLUMN_NOT_FOUND, message=""line 6:7: Column 's_suppkey' cannot be resolved"", query_id=20260519_095856_00011_tc5if)"
+StarRocks,1,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,3,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,4,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,5,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,6,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,7,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,9,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,12,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,14,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,17,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,18,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.
+StarRocks,21,0.0,0.0,0.0,0.0,0.0,5502 (42602): Getting analyzing error. Detail message: Unknown table 'tpch_sf1.lineitem'.

@@ -26,6 +26,10 @@ derby.log
 spark-warehouse/
 *.log
 
+# hw7 generated artifacts
+hw7/warehouse/
+hw7/.ivy2/
+
 # Performance reports and results
 performance_report_*.md
 performance_results.csv

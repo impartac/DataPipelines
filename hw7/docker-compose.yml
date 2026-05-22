@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  hw7-benchmark:
+    build: .
+    container_name: hw7-benchmark
+    volumes:
+      - ./results:/app/results
+      - ./warehouse:/app/warehouse
+      - ./.ivy2:/root/.ivy2
+      - ./:/app:ro
+    environment:
+      - SPARK_LOCAL_IP=127.0.0.1
+      - SPARK_DRIVER_HOST=127.0.0.1
+    mem_limit: 8g
+    cpus: 4.0
+    command: python main.py

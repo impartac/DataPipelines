@@ -1,0 +1,4 @@
+format,scan_time_sec,filter_time_sec,agg_time_sec
+iceberg,0.44,1.23,1.29
+delta,2.23,1.27,2.19
+hudi,0.98,1.28,1.61

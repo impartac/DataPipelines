@@ -1,0 +1,4 @@
+format,expected_rows,actual_rows,successes,failures,data_loss,total_sec
+iceberg,10000,2500,1,3,7500,14.57
+delta,10000,2500,1,3,7500,13.67
+hudi,10000,2500,1,3,7500,44.02

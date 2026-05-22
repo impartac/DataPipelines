@@ -1,0 +1,4 @@
+format,size_bytes,size_mb
+iceberg,119771,0.11
+delta,150220,0.14
+hudi,3692459,3.52

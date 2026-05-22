@@ -1,0 +1,7 @@
+format,fraction,n_rows,write_time_sec,overwrite_time_sec
+iceberg,0.5,5000,2.9,1.0
+iceberg,1.0,10000,1.84,0.95
+delta,0.5,5000,2.78,5.3
+delta,1.0,10000,3.33,5.18
+hudi,0.5,5000,37.75,38.41
+hudi,1.0,10000,27.23,24.39

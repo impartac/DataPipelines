@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+
+  trino:
+    image: trinodb/trino:444
+    container_name: trino-benchmark
+    hostname: trino
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino/etc:/etc/trino:ro
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx7g
+    mem_limit: 8g
+    cpus: 4.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/v1/info | grep -q '\"starting\":false'"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 45s
+    restart: unless-stopped
+
+  starrocks:
+    image: starrocks/allin1-ubuntu:3.3.7
+    container_name: starrocks-benchmark
+    hostname: starrocks
+    ports:
+      - "9030:9030"
+      - "8030:8030"
+      - "8040:8040"
+    shm_size: "4g"
+    mem_limit: 8g
+    cpus: 4.0
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=yes
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -P 9030 -u root --connect-timeout=5 -e 'SELECT 1' 2>/dev/null | grep -q 1"]
+      interval: 20s
+      timeout: 15s
+      retries: 25
+      start_period: 90s
+    restart: unless-stopped
