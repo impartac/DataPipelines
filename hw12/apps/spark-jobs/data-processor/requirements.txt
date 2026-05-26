@@ -1,0 +1,3 @@
+# Core dependencies (always needed)
+# pyspark is optional - only required when USE_SPARK=true
+# For local mode (USE_SPARK=false), no external packages needed
